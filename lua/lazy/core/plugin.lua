@@ -462,6 +462,8 @@ function M._values(root, plugin, prop, is_list)
   else
     ---@type {path:string[], list:any[]}[]
     local lists = {}
+    
+    -- Handle explicit opts_extend declarations
     ---@diagnostic disable-next-line: no-unknown
     for _, key in ipairs(plugin[prop .. "_extend"] or {}) do
       local path = vim.split(key, ".", { plain = true })
@@ -473,10 +475,34 @@ function M._values(root, plugin, prop, is_list)
         vim.list_extend(lists[key].list, v)
       end
     end
-    local t = Util.merge(ret, values)
+    
+    -- Auto-detect and merge arrays - add this function
+    local function deep_merge_with_arrays(target, source)
+      for k, v in pairs(source) do
+        if type(v) == "table" and type(target[k]) == "table" then
+          if vim.tbl_islist(v) and vim.tbl_islist(target[k]) then
+            -- Both are arrays - extend instead of replace
+            vim.list_extend(target[k], v)
+          else
+            -- Both are tables but not arrays - recurse
+            deep_merge_with_arrays(target[k], v)
+          end
+        else
+          -- Not both tables, or one doesn't exist - regular override
+          target[k] = v
+        end
+      end
+      return target
+    end
+    
+    -- Use our custom merge instead of Util.merge
+    local t = deep_merge_with_arrays(vim.deepcopy(ret), values)
+    
+    -- Apply explicit extends from earlier
     for _, list in pairs(lists) do
       Util.key_set(t, list.path, list.list)
     end
+    
     return t
   end
 end
